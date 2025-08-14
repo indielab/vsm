@@ -1,36 +1,215 @@
 # VSM — Viable Systems for Ruby Agents
 
-VSM is a tiny, idiomatic Ruby runtime for building agentic systems with a clear spine:
+[![Conforms to README.lint](https://img.shields.io/badge/README.lint-conforming-brightgreen)](https://github.com/discoveryworks/readme-dot-lint)
 
-- **Operations** — do the work (tools/skills)
-- **Coordination** — schedule, order, and arbitrate conversations (the "floor")
-- **Intelligence** — plan/decide (e.g., call an LLM driver, or your own logic)
-- **Governance** — enforce policy, safety, and budgets
-- **Identity** — define purpose and invariants
+VSM is a tiny, idiomatic Ruby runtime for building agentic systems with a clear spine: Operations, Coordination, Intelligence, Governance, and Identity.
 
-Everything lives inside a **Capsule**. Capsules can contain child capsules (full recursion), and "tools" are just capsules that opt‑in to a tool interface. VSM is async-first (powered by `async`), so streaming, I/O, and multiple tool calls can run concurrently.
+🌸 Why use VSM?
+=============================
 
-## Why VSM?
+Building agentic systems often leads to tangled callback spaghetti and unclear responsibilities. As you add tools, LLM providers, and coordination logic, the complexity explodes. You end up with:
 
-You get a composable, testable architecture with named responsibilities (POODR/SOLID style), not a tangle of callbacks. You can start with a single capsule and grow to a swarm—without changing your interface or core loop.
+- Callbacks nested in callbacks with no clear flow
+- Tool execution mixed with business logic
+- No clear separation between "what the agent does" vs "how it decides" vs "what rules it follows"
+- Difficulty testing individual components
+- Lock-in to specific LLM providers or frameworks
 
-## Table of contents
+VSM solves this by providing a composable, testable architecture with **named responsibilities** (POODR/SOLID style). You get clear separation of concerns from day one, and can start with a single capsule and grow to a swarm—without changing your interface or core loop.
+
+The Viable System Model gives you a proven organizational pattern: every autonomous system needs Operations (doing), Coordination (scheduling), Intelligence (deciding), Governance (rules), and Identity (purpose). VSM makes this concrete in Ruby.
+
+🌸🌸 Who benefits from VSM?
+=============================
+
+**Ruby developers building AI agents** who want clean architecture over framework magic. If you've read Sandi Metz's POODR, appreciate small objects with single responsibilities, and want your agent code to be as clean as your Rails models, VSM is for you.
+
+**Teams scaling from prototype to production** who need to start simple (one tool, one LLM call) but know they'll need multiple tools, streaming, confirmations, and policy enforcement later. VSM's recursive capsule design means your "hello world" agent uses the same architecture as your production swarm.
+
+**Developers who want provider independence**. VSM doesn't lock you into OpenAI, Anthropic, or any specific provider. Your Intelligence component decides how to plan—whether that's calling an LLM, following a state machine, or using your own logic.
+
+🌸🌸🌸 What exactly is VSM?
+=============================
+
+VSM is a Ruby gem that provides:
+
+1. **Five named systems** that every agent needs:
+   - **Operations** — do the work (tools/skills)
+   - **Coordination** — schedule, order, and arbitrate conversations (the "floor")
+   - **Intelligence** — plan/decide (e.g., call an LLM driver, or your own logic)
+   - **Governance** — enforce policy, safety, and budgets
+   - **Identity** — define purpose and invariants
+
+2. **Capsules** — recursive building blocks. Every capsule has the five systems above plus a message bus. Capsules can contain child capsules, and "tools" are just capsules that opt-in to a tool interface.
+
+3. **Async-first architecture** — powered by the `async` gem, VSM runs streaming, I/O, and multiple tool calls concurrently without blocking.
+
+4. **Clean interfaces** — Ports translate external events (CLI, HTTP, MCP) into messages. Tools expose JSON Schema descriptors that work with any LLM provider.
+
+5. **Built-in observability** — append-only JSONL ledger of all events, ready to feed into a monitoring UI.
+
+🌸🌸🌸🌸 How do I use VSM?
+=============================
+
+## Install
+
+```ruby
+# Gemfile
+gem "vsm", "~> 0.0.1"
+```
+
+```bash
+bundle install
+```
+
+Ruby 3.2+ recommended.
+
+## Quick Example
+
+Here's a minimal agent with one tool:
+
+```ruby
+require "securerandom"
+require "vsm"
+
+# 1) Define a tool as a capsule
+class EchoTool < VSM::ToolCapsule
+  tool_name "echo"
+  tool_description "Echoes a message"
+  tool_schema({ 
+    type: "object", 
+    properties: { text: { type: "string" } }, 
+    required: ["text"] 
+  })
+
+  def run(args)
+    "you said: #{args["text"]}"
+  end
+end
+
+# 2) Define your Intelligence (decides what to do)
+class DemoIntelligence < VSM::Intelligence
+  def handle(message, bus:, **)
+    return false unless message.kind == :user
+    
+    if message.payload =~ /\Aecho:\s*(.+)\z/
+      # User said "echo: something" - call the tool
+      bus.emit VSM::Message.new(
+        kind: :tool_call,
+        payload: { tool: "echo", args: { "text" => $1 } },
+        corr_id: SecureRandom.uuid,
+        meta: message.meta
+      )
+    else
+      # Just respond
+      bus.emit VSM::Message.new(
+        kind: :assistant, 
+        payload: "Try: echo: hello", 
+        meta: message.meta
+      )
+    end
+    true
+  end
+end
+
+# 3) Build your agent using the DSL
+capsule = VSM::DSL.define(:demo) do
+  identity     class: VSM::Identity,    args: { identity: "demo", invariants: [] }
+  governance   class: VSM::Governance
+  coordination class: VSM::Coordination
+  intelligence class: DemoIntelligence
+  operations do
+    capsule :echo, class: EchoTool
+  end
+end
+
+# 4) Add a simple CLI interface
+class StdinPort < VSM::Port
+  def loop
+    session = SecureRandom.uuid
+    print "You: "
+    while (line = $stdin.gets&.chomp)
+      @capsule.bus.emit VSM::Message.new(
+        kind: :user, 
+        payload: line, 
+        meta: { session_id: session }
+      )
+      @capsule.roles[:coordination].wait_for_turn_end(session)
+      print "You: "
+    end
+  end
+
+  def render_out(msg)
+    case msg.kind
+    when :assistant
+      puts "\nBot: #{msg.payload}"
+    when :tool_result
+      puts "\nTool> #{msg.payload}"
+      @capsule.bus.emit VSM::Message.new(
+        kind: :assistant, 
+        payload: "(done)", 
+        meta: msg.meta
+      )
+    end
+  end
+end
+
+# 5) Start the runtime
+VSM::Runtime.start(capsule, ports: [StdinPort.new(capsule:)])
+```
+
+Run it:
+```bash
+ruby quickstart.rb
+# You: echo: hello
+# Tool> you said: hello
+```
+
+## Building a Real Agent
+
+For a real agent with LLM integration:
+
+```ruby
+capsule = VSM::DSL.define(:my_agent) do
+  identity     class: VSM::Identity, 
+               args: { identity: "my_agent", invariants: ["stay in workspace"] }
+  governance   class: VSM::Governance
+  coordination class: VSM::Coordination
+  intelligence class: MyLLMIntelligence  # Your class that calls OpenAI/Anthropic/etc
+  monitoring   class: VSM::Monitoring    # Optional: writes JSONL event log
+  
+  operations do
+    capsule :list_files, class: ListFilesTool
+    capsule :read_file,  class: ReadFileTool
+    capsule :write_file, class: WriteFileTool
+  end
+end
+```
+
+Your `MyLLMIntelligence` would:
+1. Maintain conversation history
+2. Call your LLM provider with available tools
+3. Emit `:tool_call` messages when the LLM wants to use tools
+4. Stream `:assistant_delta` tokens as they arrive
+5. Emit final `:assistant` message when done
+
+🌸🌸🌸🌸🌸 Extras
+=============================
+
+## Table of Contents
 
 - [Features](#features)
-- [Install](#install)
-- [Quickstart](#quickstart)
-- [Core concepts](#core-concepts)
-- [Build an organism (DSL)](#build-an-organism-dsl)
-- [Tools as capsules](#tools-as-capsules)
-- [Async & parallelism](#async--parallelism)
-- [Ports (interfaces)](#ports-interfaces)
+- [Core Concepts](#core-concepts)
+- [Tools as Capsules](#tools-as-capsules)
+- [Async & Parallelism](#async--parallelism)
+- [Ports (Interfaces)](#ports-interfaces)
 - [Observability](#observability)
 - [Writing an Intelligence](#writing-an-intelligence)
 - [Testing](#testing)
-- [Design goals](#design-goals)
+- [Design Goals](#design-goals)
 - [Roadmap](#roadmap)
 - [FAQ](#faq)
-- [API overview](#api-overview)
+- [API Overview](#api-overview)
 - [License](#license)
 - [Contributing](#contributing)
 
@@ -46,105 +225,7 @@ You get a composable, testable architecture with named responsibilities (POODR/S
 - **Observability**: append‑only JSONL ledger you can feed into a UI later
 - **POODR/SOLID**: small objects, high cohesion, low coupling
 
-## Install
-
-```ruby
-# Gemfile
-gem "vsm", "~> 0.0.1"
-```
-
-```bash
-bundle install
-```
-
-Ruby 3.2+ recommended.
-
-## Quickstart
-
-Create a tiny organism with one tool capsule and a minimal Intelligence.
-
-```ruby
-# quickstart.rb
-require "securerandom"
-require "vsm"
-
-# 1) A tool (capsule) that echoes input
-class EchoTool < VSM::ToolCapsule
-  tool_name "echo"
-  tool_description "Echoes a message"
-  tool_schema({ type: "object", properties: { text: { type: "string" } }, required: ["text"] })
-
-  def run(args)
-    "you said: #{args["text"]}"
-  end
-end
-
-# 2) Minimal intelligence: if user types 'echo: ...' create a tool_call
-class DemoIntelligence < VSM::Intelligence
-  def handle(message, bus:, **)
-    return false unless message.kind == :user
-    if message.payload =~ /\Aecho:\s*(.+)\z/
-      bus.emit VSM::Message.new(
-        kind: :tool_call,
-        payload: { tool: "echo", args: { "text" => $1 } },
-        corr_id: SecureRandom.uuid,
-        meta: message.meta
-      )
-    else
-      bus.emit VSM::Message.new(kind: :assistant, payload: "Try: echo: hello", meta: message.meta)
-    end
-    true
-  end
-end
-
-# 3) Build a capsule (organism) with the DSL
-capsule = VSM::DSL.define(:demo) do
-  identity     class: VSM::Identity,    args: { identity: "demo", invariants: [] }
-  governance   class: VSM::Governance
-  coordination class: VSM::Coordination
-  intelligence class: DemoIntelligence
-  monitoring   class: VSM::Monitoring   # optional JSONL ledger
-  operations do
-    capsule :echo, class: EchoTool
-  end
-end
-
-# 4) A tiny CLI port
-class StdinPort < VSM::Port
-  def loop
-    session = SecureRandom.uuid
-    print "You: "
-    while (line = $stdin.gets&.chomp)
-      @capsule.bus.emit VSM::Message.new(kind: :user, payload: line, meta: { session_id: session })
-      @capsule.roles[:coordination].wait_for_turn_end(session)
-      print "You: "
-    end
-  end
-
-  def render_out(msg)
-    case msg.kind
-    when :assistant
-      puts "\nBot: #{msg.payload}"
-    when :tool_result
-      puts "\nTool> #{msg.payload}"
-      # Mark turn complete by emitting a final assistant message
-      @capsule.bus.emit VSM::Message.new(kind: :assistant, payload: "(done)", meta: msg.meta)
-    end
-  end
-end
-
-VSM::Runtime.start(capsule, ports: [StdinPort.new(capsule:)])
-```
-
-Run it:
-
-```bash
-ruby quickstart.rb
-# You: echo: hello
-# Tool> you said: hello
-```
-
-## Core concepts
+## Core Concepts
 
 ### Capsule
 
@@ -178,26 +259,7 @@ VSM::Message.new(
 
 A non‑blocking bus built on fibers (`async`). Emitting a message never blocks the emitter.
 
-## Build an organism (DSL)
-
-```ruby
-capsule = VSM::DSL.define(:my_agent) do
-  identity     class: VSM::Identity,    args: { identity: "my_agent", invariants: ["stay in workspace"] }
-  governance   class: VSM::Governance
-  coordination class: VSM::Coordination
-  intelligence class: MyIntelligence             # you write this
-  monitoring   class: VSM::Monitoring            # optional
-
-  operations do                                  # child capsules (recursion)
-    capsule :list_files, class: MyListFilesTool  # opt-in tool capsules
-    capsule :read_file,  class: MyReadFileTool
-  end
-end
-```
-
-The DSL wires the named systems and injects governance into tool capsules (so tools can ask for sandbox helpers).
-
-## Tools as capsules
+## Tools as Capsules
 
 Any capsule can opt‑in to act as a "tool" by including `VSM::ActsAsTool` (already included in `VSM::ToolCapsule`).
 
@@ -240,7 +302,7 @@ tool.to_gemini_tool    # => {name, description, parameters}
 
 **Why opt‑in?** Not every capsule should be callable as a tool. Opt‑in keeps coupling low. Later you can auto‑expose selected capsules as tools or via MCP.
 
-## Async & parallelism
+## Async & Parallelism
 
 VSM is async by default:
 
@@ -252,7 +314,7 @@ VSM is async by default:
 
 You can add Ractor/Subprocess executors later without changing the API.
 
-## Ports (interfaces)
+## Ports (Interfaces)
 
 A Port translates external events into messages and renders outgoing messages. Examples: CLI chat, TUI, HTTP, MCP stdio, editor plugin.
 
@@ -338,7 +400,7 @@ class MyIntelligence < VSM::Intelligence
 end
 ```
 
-In your application (e.g., airb), you can plug in provider drivers that stream and support native tool calling; Intelligence remains the same.
+In your application, you can plug in provider drivers that stream and support native tool calling; Intelligence remains the same.
 
 ## Testing
 
@@ -378,7 +440,7 @@ RSpec.describe "tool dispatch" do
 end
 ```
 
-## Design goals
+## Design Goals
 
 - **Ergonomic Ruby** (small objects, clear names, blocks/DSL where it helps)
 - **High cohesion, low coupling** (roles are tiny; tools are self‑contained)
@@ -412,7 +474,7 @@ Handled by your Intelligence implementation (e.g., your LLM driver). Emit `:assi
 **Is VSM tied to any specific LLM?**  
 No. Write a driver that conforms to your Intelligence's expectations (usually "yield deltas" + "yield tool_calls"). Keep the provider in your app gem.
 
-## API overview
+## API Overview
 
 ```ruby
 module VSM
