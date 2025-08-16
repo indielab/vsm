@@ -43,7 +43,10 @@ module VSM
         st[:history] << { role: "tool_result", tool_call_id: message.corr_id, name: name, content: message.payload.to_s }
         st[:pending_tool_ids].delete(message.corr_id)
         # Only continue once all tool results for this turn arrived:
-        invoke_model(sid, bus) if st[:pending_tool_ids].empty?
+        if st[:pending_tool_ids].empty?
+          # Re-enter model for the same turn with tool results in history:
+          invoke_model(sid, bus)
+        end
         true
 
       else
@@ -124,6 +127,8 @@ module VSM
               if ENV["VSM_DEBUG_STREAM"] == "1"
                 $stderr.puts "Intelligence: tool_calls count=#{payload.size}; pending now=#{st[:pending_tool_ids].size}"
               end
+              # Allow next invocation (after tools complete) without waiting for driver ensure
+              st[:inflight] = false
               payload.each do |call|
                 bus.emit VSM::Message.new(
                   kind: :tool_call,

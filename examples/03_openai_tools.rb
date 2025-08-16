@@ -93,13 +93,14 @@ class ToolTTY < VSM::Port
       puts ""
       puts "(turn #{msg.meta&.dig(:turn_id)})"
     when :tool_call
-      puts "\nTool? #{msg.payload[:tool]}(#{msg.corr_id}) #{msg.payload[:args].inspect}"
+      puts "\nTool? #{msg.payload[:tool]}(#{msg.corr_id})"
     when :tool_result
-      puts "\nTool> #{msg.payload.to_s.slice(0, 4000)}"
+      puts "\nTool> (completed)"
     end
   end
 end
 
 VSM::Runtime.start(cap, ports: [ToolTTY.new(capsule: cap)])
+
 
 
