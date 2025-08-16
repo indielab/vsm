@@ -8,7 +8,8 @@ module VSM
     end
 
     def observe(bus)
-      bus.subscribe { |m| stage(m) }
+      # Note: staging is handled by the capsule loop, not by subscription
+      # This method exists for consistency but doesn't auto-stage messages
     end
 
     def stage(message) = (@queue << message)

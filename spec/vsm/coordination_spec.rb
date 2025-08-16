@@ -17,21 +17,22 @@ RSpec.describe VSM::Coordination do
     # All async operations need to be inside async context
     seq = []
     Async do |task|
-      bus.emit m_toolr
-      bus.emit m_asst
-      bus.emit m_user
+      # Manually stage messages since observe no longer auto-stages
+      coord.stage(m_toolr)
+      coord.stage(m_asst)
+      coord.stage(m_user)
 
       coord.drain(bus) { |m| seq << m.kind }
       expect(seq).to eq([:user, :tool_result, :assistant])
 
-      # Set up waiter before emitting assistant message that will signal it
+      # Set up waiter before staging assistant message that will signal it
       task.async do
         coord.wait_for_turn_end(sid)
         seq << :unblocked
       end
       
-      # Emit another assistant message to trigger the turn-end signal
-      bus.emit VSM::Message.new(kind: :assistant, payload: "final", meta: { session_id: sid })
+      # Stage another assistant message to trigger the turn-end signal
+      coord.stage(VSM::Message.new(kind: :assistant, payload: "final", meta: { session_id: sid }))
       coord.drain(bus) { |_| }
       task.sleep 0.05
       expect(seq).to include(:unblocked)

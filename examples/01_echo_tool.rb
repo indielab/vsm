@@ -15,13 +15,21 @@ end
 # Minimal “intelligence” that triggers a tool when user types "echo: ..."
 class DemoIntelligence < VSM::Intelligence
   def handle(message, bus:, **)
-    return false unless message.kind == :user
-    if message.payload =~ /\Aecho:\s*(.+)\z/
-      bus.emit VSM::Message.new(kind: :tool_call, payload: { tool: "echo", args: { "text" => $1 } }, corr_id: SecureRandom.uuid, meta: message.meta)
+    case message.kind
+    when :user
+      if message.payload =~ /\Aecho:\s*(.+)\z/
+        bus.emit VSM::Message.new(kind: :tool_call, payload: { tool: "echo", args: { "text" => $1 } }, corr_id: SecureRandom.uuid, meta: message.meta)
+      else
+        bus.emit VSM::Message.new(kind: :assistant, payload: "Try: echo: hello", meta: message.meta)
+      end
+      true
+    when :tool_result
+      # Complete the turn after tool execution
+      bus.emit VSM::Message.new(kind: :assistant, payload: "(done)", meta: message.meta)
+      true
     else
-      bus.emit VSM::Message.new(kind: :assistant, payload: "Try: echo: hello", meta: message.meta)
+      false
     end
-    true
   end
 end
 
@@ -43,6 +51,7 @@ class StdinPort < VSM::Port
     print "You: "
     while (line = $stdin.gets&.chomp)
       @capsule.bus.emit VSM::Message.new(kind: :user, payload: line, meta: { session_id: sid })
+      @capsule.roles[:coordination].wait_for_turn_end(sid)
       print "You: "
     end
   end
