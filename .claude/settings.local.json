@@ -1,9 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(bundle exec rspec:*)"
+      "Bash(bundle exec rspec:*)",
+      "Bash(cat:*)",
+      "Bash(gem list)",
+      "Bash(bundle exec rake:*)",
+      "Bash(gem install:*)",
+      "Bash(ruby test_tool_calls:*)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "/Users/swerner/Development/gems/airb"
+    ]
   }
 }
