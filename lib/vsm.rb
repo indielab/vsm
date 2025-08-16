@@ -33,6 +33,8 @@ require_relative "vsm/drivers/anthropic/async_driver"
 require_relative "vsm/drivers/gemini/async_driver"
 require_relative "vsm/drivers/family"
 
+require_relative "vsm/lens"
+
 module Vsm
   class Error < StandardError; end
   # Your code goes here...
