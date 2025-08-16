@@ -2,6 +2,8 @@
 # frozen_string_literal: true
 require_relative "lens/event_hub"
 require_relative "lens/server"
+require_relative "lens/stats"
+require_relative "lens/tui"
 
 module VSM
   module Lens
@@ -9,11 +11,12 @@ module VSM
     # Returns the EventHub so other lenses (e.g., TUI) can also subscribe.
     def self.attach!(capsule, host: "127.0.0.1", port: 9292, token: nil)
       hub = EventHub.new
-
-      # Mirror all bus messages to the hub:
       capsule.bus.subscribe { |msg| hub.publish(msg) }
 
-      server = Server.new(hub: hub, token: token)
+      require_relative "lens/stats"
+      stats  = Stats.new(hub: hub, capsule: capsule)
+      server = Server.new(hub: hub, token: token, stats: stats)
+
 
       Thread.new do
         app = server.rack_app

@@ -113,69 +113,76 @@ module VSM
       </html>
       HTML
 
-      def initialize(hub:, token: nil)
-        @hub, @token = hub, token
+      def initialize(hub:, token: nil, stats: nil)
+        @hub, @token, @stats = hub, token, stats
       end
 
       def rack_app
-        hub = @hub
+        hub   = @hub
         token = @token
-
+        stats = @stats
         Rack::Builder.new do
           use Rack::ContentLength
 
           map "/" do
-            run proc { |_env| [200, { "Content-Type" => "text/html; charset=utf-8" }, [Server::INDEX_HTML]] }
+            run proc { |_env| [200, {"Content-Type"=>"text/html; charset=utf-8"}, [Server::INDEX_HTML]] }
           end
 
           map "/events" do
             run proc { |env|
               req = Rack::Request.new(env)
               if token && req.params["token"] != token
-                [401, { "Content-Type" => "text/plain" }, ["unauthorized"]]
+                [401, {"Content-Type"=>"text/plain"}, ["unauthorized"]]
               else
                 queue, snapshot = hub.subscribe
-                headers = {
-                  "Content-Type"  => "text/event-stream",
-                  "Cache-Control" => "no-cache",
-                  "Connection"    => "keep-alive"
-                }
+                headers = {"Content-Type"=>"text/event-stream", "Cache-Control"=>"no-cache", "Connection"=>"keep-alive"}
                 body = SSEBody.new(hub, queue, snapshot)
                 [200, headers, body]
               end
             }
           end
+
+          map "/state" do
+            run proc { |env|
+              req = Rack::Request.new(env)
+              if token && req.params["token"] != token
+                [401, {"Content-Type"=>"application/json"}, [JSON.dump({error: "unauthorized"})]]
+              else
+                payload = stats ? stats.state : { error: "stats_unavailable" }
+                [200, {"Content-Type"=>"application/json"}, [JSON.dump(payload)]]
+              end
+            }
+          end
         end
       end
+    end
 
-      class SSEBody
-        def initialize(hub, queue, snapshot)
-          @hub, @queue, @snapshot = hub, queue, snapshot
-          @heartbeat = true
-        end
+    class SSEBody
+      def initialize(hub, queue, snapshot)
+        @hub, @queue, @snapshot = hub, queue, snapshot
+        @heartbeat = true
+      end
 
-        def each
-          # Send snapshot first
-          @snapshot.each { |ev| yield "data: #{JSON.generate(ev)}\n\n" }
-          # Heartbeat thread to keep connections alive
-          hb = Thread.new do
-            while @heartbeat
-              sleep 15
-              yield ": ping\n\n"  # SSE comment line
-            end
+      def each
+        # Send snapshot first
+        @snapshot.each { |ev| yield "data: #{JSON.generate(ev)}\n\n" }
+        # Heartbeat thread to keep connections alive
+        hb = Thread.new do
+          while @heartbeat
+            sleep 15
+            yield ": ping\n\n"  # SSE comment line
           end
-          # Stream live events
-          loop do
-            ev = @queue.pop
-            yield "data: #{JSON.generate(ev)}\n\n"
-          end
-        ensure
-          @heartbeat = false
-          @hub.unsubscribe(@queue) rescue nil
-          hb.kill if hb&.alive?
         end
+        # Stream live events
+        loop do
+          ev = @queue.pop
+          yield "data: #{JSON.generate(ev)}\n\n"
+        end
+      ensure
+        @heartbeat = false
+        @hub.unsubscribe(@queue) rescue nil
+        hb.kill if hb&.alive?
       end
     end
   end
 end
-
