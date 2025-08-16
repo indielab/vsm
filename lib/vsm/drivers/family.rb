@@ -4,9 +4,9 @@ module VSM
     module Family
       def self.of(driver)
         case driver
-        when VSM::Drivers::OpenAI::DriverAsync   then :openai
-        when VSM::Drivers::Anthropic::DriverAsync then :anthropic
-        when VSM::Drivers::Gemini::DriverAsync    then :gemini
+        when VSM::Drivers::OpenAI::AsyncDriver    then :openai
+        when VSM::Drivers::Anthropic::AsyncDriver then :anthropic
+        when VSM::Drivers::Gemini::AsyncDriver    then :gemini
         else :openai
         end
       end
