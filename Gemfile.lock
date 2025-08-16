@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    vsm (0.0.1)
+    vsm (0.1.0)
       async (~> 2.27)
       async-http (~> 0.90)
       rack (~> 3.2)

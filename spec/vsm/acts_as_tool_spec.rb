@@ -13,7 +13,7 @@ RSpec.describe VSM::ActsAsTool do
     d = klass.new.tool_descriptor
     expect(d.name).to eq("alpha")
     expect(d.description).to eq("desc")
-    expect(d.schema).to include("type" => "object")
+    expect(d.schema).to include(type: "object")
   end
 end
 

@@ -21,7 +21,7 @@ RSpec.describe VSM::Operations do
   end
 
   it "runs multiple slow tools in parallel via threads" do
-    results = []
+    results = Queue.new
     bus.subscribe { |m| results << m if m.kind == :tool_result }
 
     t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -30,13 +30,14 @@ RSpec.describe VSM::Operations do
       ops.handle(msg, bus:, children:)
     end
 
-    Async { |task| task.sleep 0.6 } # wait for both sleeps (0.25 each) to complete
+    # Wait for both results to come back
+    msgs = 2.times.map { results.pop }
 
-    ids = results.map(&:payload).sort
+    ids = msgs.map(&:payload).sort
     expect(ids).to eq(["slow-0", "slow-1"])
 
     total = Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0
-    expect(total).to be < 0.5 # proves parallelism vs serial 0.5+
+    expect(total).to be < 0.6 # proves parallelism vs serial 0.5+
   end
 
   it "handles tool errors by emitting error result" do

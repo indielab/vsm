@@ -11,9 +11,9 @@ module VSM
 
     def tool_descriptor
       VSM::Tool::Descriptor.new(
-        name: self.klass.tool_name,
-        description: self.klass.tool_description,
-        schema: self.klass.tool_schema
+        name: self.class.tool_name,
+        description: self.class.tool_description,
+        schema: self.class.tool_schema
       )
     end
   end

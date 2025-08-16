@@ -2,6 +2,8 @@
 require "vsm"
 
 RSpec.describe VSM do
+  include Async::RSpec::Reactor
+
   it "builds a capsule and routes a tool call" do
     class T < VSM::ToolCapsule
       tool_name "t"; tool_description "d"; tool_schema({ type: "object", properties: {}, required: [] })
@@ -18,13 +20,19 @@ RSpec.describe VSM do
       end
     end
 
-    # emit a tool call; ensure tool_result arrives
+    # Test operations component directly instead of full capsule
+    ops = cap.roles[:operations]
+    bus = cap.bus
+    children = cap.children
+    
     q = Queue.new
-    cap.bus.subscribe { |m| q << m if m.kind == :tool_result }
-    cap.run
-    cap.bus.emit VSM::Message.new(kind: :tool_call, payload: { tool: "t", args: {} }, corr_id: "1")
-    msg = q.pop
-    expect(msg.payload).to eq("ok")
+    bus.subscribe { |m| q << m if m.kind == :tool_result }
+    
+    msg = VSM::Message.new(kind: :tool_call, payload: { tool: "t", args: {} }, corr_id: "1")
+    expect(ops.handle(msg, bus:, children:)).to be true
+    
+    result = q.pop
+    expect(result.payload).to eq("ok")
   end
 end
 

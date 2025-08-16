@@ -14,21 +14,24 @@ RSpec.describe VSM::Coordination do
     m_toolr = VSM::Message.new(kind: :tool_result, payload: "ok", meta: { session_id: sid })
     m_asst  = VSM::Message.new(kind: :assistant, payload: "done", meta: { session_id: sid })
 
-    bus.emit m_toolr
-    bus.emit m_asst
-    bus.emit m_user
-
+    # All async operations need to be inside async context
     seq = []
-    coord.drain(bus) { |m| seq << m.kind }
-    expect(seq).to eq([:user, :tool_result, :assistant])
-
-    # wait_for_turn_end unblocks on :assistant
     Async do |task|
+      bus.emit m_toolr
+      bus.emit m_asst
+      bus.emit m_user
+
+      coord.drain(bus) { |m| seq << m.kind }
+      expect(seq).to eq([:user, :tool_result, :assistant])
+
+      # Set up waiter before emitting assistant message that will signal it
       task.async do
         coord.wait_for_turn_end(sid)
         seq << :unblocked
       end
-      # drain again to process the assistant and release waiter
+      
+      # Emit another assistant message to trigger the turn-end signal
+      bus.emit VSM::Message.new(kind: :assistant, payload: "final", meta: { session_id: sid })
       coord.drain(bus) { |_| }
       task.sleep 0.05
       expect(seq).to include(:unblocked)

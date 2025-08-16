@@ -12,12 +12,14 @@ RSpec.describe VSM::Monitoring do
       bus = VSM::AsyncChannel.new
       mon.observe(bus)
 
-      bus.emit VSM::Message.new(kind: :user, payload: "hi", meta: { session_id: "s" })
-      Async { |t| t.sleep 0.05 }
+      Async do |task|
+        bus.emit VSM::Message.new(kind: :user, payload: "hi", meta: { session_id: "s" })
+        task.sleep 0.05
 
-      data = File.read(VSM::Monitoring::LOG)
-      expect(data).to include("\"kind\":\"user\"")
-      expect(data).to include("\"session_id\":\"s\"")
+        data = File.read(VSM::Monitoring::LOG)
+        expect(data).to include("\"kind\":\"user\"")
+        expect(data).to include("\"session_id\":\"s\"")
+      end
     end
   end
 end
