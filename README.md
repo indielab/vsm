@@ -114,12 +114,12 @@ end
 
 # 3) Build your agent using the DSL
 capsule = VSM::DSL.define(:demo) do
-  identity     class: VSM::Identity,    args: { identity: "demo", invariants: [] }
-  governance   class: VSM::Governance
-  coordination class: VSM::Coordination
-  intelligence class: DemoIntelligence
+  identity     klass: VSM::Identity,    args: { identity: "demo", invariants: [] }
+  governance   klass: VSM::Governance
+  coordination klass: VSM::Coordination
+  intelligence klass: DemoIntelligence
   operations do
-    capsule :echo, class: EchoTool
+    capsule :echo, klass: EchoTool
   end
 end
 
@@ -171,17 +171,17 @@ For a real agent with LLM integration:
 
 ```ruby
 capsule = VSM::DSL.define(:my_agent) do
-  identity     class: VSM::Identity, 
+  identity     klass: VSM::Identity, 
                args: { identity: "my_agent", invariants: ["stay in workspace"] }
-  governance   class: VSM::Governance
-  coordination class: VSM::Coordination
-  intelligence class: MyLLMIntelligence  # Your class that calls OpenAI/Anthropic/etc
-  monitoring   class: VSM::Monitoring    # Optional: writes JSONL event log
+  governance   klass: VSM::Governance
+  coordination klass: VSM::Coordination
+  intelligence klass: MyLLMIntelligence  # Your class that calls OpenAI/Anthropic/etc
+  monitoring   klass: VSM::Monitoring    # Optional: writes JSONL event log
   
   operations do
-    capsule :list_files, class: ListFilesTool
-    capsule :read_file,  class: ReadFileTool
-    capsule :write_file, class: WriteFileTool
+    capsule :list_files, klass: ListFilesTool
+    capsule :read_file,  klass: ReadFileTool
+    capsule :write_file, klass: WriteFileTool
   end
 end
 ```
@@ -424,11 +424,11 @@ RSpec.describe "tool dispatch" do
 
   it "routes tool_call to tool_result" do
     cap = VSM::DSL.define(:test) do
-      identity     class: VSM::Identity, args: { identity: "t", invariants: [] }
-      governance   class: VSM::Governance
-      coordination class: VSM::Coordination
-      intelligence class: VSM::Intelligence
-      operations { capsule :t, class: T }
+      identity     klass: VSM::Identity, args: { identity: "t", invariants: [] }
+      governance   klass: VSM::Governance
+      coordination klass: VSM::Coordination
+      intelligence klass: VSM::Intelligence
+      operations { capsule :t, klass: T }
     end
 
     q = Queue.new

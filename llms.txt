@@ -1,0 +1,322 @@
+
+LLMS CONTEXT FILE — VSM (Viable Systems for Agents) GEM
+=======================================================
+
+Audience: Large Language Models (LLMs) acting as coding assistants and human contributors.
+Goal: Provide all key context to safely modify, extend, and use the VSM gem as a framework for agentic CLIs (e.g., `airb`).
+
+— TL;DR —
+- VSM is a small, async, message-driven runtime for building recursive “capsules” that each contain five named systems:
+  Operations, Coordination, Intelligence, Governance, Identity. Monitoring (observability) is also provided.
+- Tools are implemented as *capsules* that *opt-in* to a tool interface (`ActsAsTool`) with JSON Schema descriptors.
+- The runtime is fiber-based (`async` gem). Tool execution can run in parallel via executors (`:fiber`, `:thread`, optional `:ractor`/`:subprocess` later).
+- Intelligence integrates provider drivers (OpenAI, Anthropic, Gemini) that support *structured tool calls* and (for OpenAI/Anthropic) *streaming*.
+- A built-in “Lens” web visualizer (SSE) streams live events from the bus; enable with one call.
+- Use the DSL to assemble a top-level capsule (the “organism”) and optional sub-capsules (recursive sub-agents or tools).
+
+--------------------------------------------------------------------------------
+1) REPO LAYOUT (EXPECTED FILES)
+--------------------------------------------------------------------------------
+lib/
+  vsm.rb                          # top-level requires
+  vsm/message.rb                  # Message struct
+  vsm/async_channel.rb            # async bus (fibers)
+  vsm/homeostat.rb                # budgets/alerts (minimal)
+  vsm/observability/ledger.rb     # Monitoring role: JSONL event ledger
+  vsm/roles/
+    operations.rb                 # runs tools (capsules) via executors
+    coordination.rb               # scheduling, floor control, turn end
+    intelligence.rb               # abstract; apps subclass this
+    governance.rb                 # policy/budgets/confirmation hooks
+    identity.rb                   # invariants/escalation
+  vsm/tool/
+    descriptor.rb                 # name/description/schema → provider shapes
+    acts_as_tool.rb               # mixin to mark capsules as tools
+    capsule.rb                    # base tool capsule (implements #run)
+  vsm/executors/
+    fiber_executor.rb             # default (IO-bound)
+    thread_executor.rb            # CPU-ish or blocking libs
+    # (optional) ractor_executor.rb / subprocess_executor.rb
+  vsm/capsule.rb                  # Capsule: wires systems, async run loop
+  vsm/dsl.rb                      # DSL for composing organisms & children
+  vsm/port.rb                     # adapter base (CLI/TUI/HTTP/etc.)
+  vsm/runtime.rb                  # boot helper: start capsule + ports
+  vsm/drivers/
+    family.rb              # returns :openai | :anthropic | :gemini
+    openai/async_driver.rb        # SSE streaming + tools
+    anthropic/async_driver.rb     # SSE streaming + tool_use blocks
+    gemini/async_driver.rb        # non-streaming MVP + functionCall
+  vsm/lens.rb                     # Lens.attach!(capsule, ...)
+  vsm/lens/event_hub.rb           # ring buffer + fan-out
+  vsm/lens/server.rb              # Rack app + SSE + tiny HTML
+
+spec/                             # RSpec tests (smoke + providers + routing)
+examples/                         # small runnable demos
+
+
+--------------------------------------------------------------------------------
+2) DESIGN GOALS
+--------------------------------------------------------------------------------
+- Small surface, idiomatic Ruby (SOLID/POODR), high cohesion/low coupling.
+- Recursion-by-default: a Capsule can contain child Capsules.
+- First-class asynchrony: non-blocking I/O; parallel tool calls where safe.
+- Provider-agnostic Intelligence with a stable, minimal event API:
+  :assistant_delta, :assistant_final, :tool_calls.
+- Observability out-of-the-box: JSONL ledger + SSE Lens.
+- Safety hooks live in Governance (path sandbox, confirmations, budgets).
+
+
+--------------------------------------------------------------------------------
+3) MESSAGE MODEL
+--------------------------------------------------------------------------------
+Struct: VSM::Message.new(
+  kind:,         # Symbol — :user, :assistant_delta, :assistant, :tool_call, :tool_result, :plan, :policy, :audit, :confirm_request, :confirm_response, :progress
+  payload:,      # Object/String — event-specific data (small where possible)
+  path:,         # Array<Symbol> — addressing (e.g., [:airb, :operations, :read_file])
+  corr_id:,      # String — correlates tool_call <-> tool_result
+  meta:          # Hash — session_id, tool name, budgets, severity, etc.
+)
+
+Guidance for LLMs:
+- Always set meta.session_id for multi-turn sessions.
+- When emitting tool events, fill meta.tool and corr_id for pairing.
+- Keep payload compact; include previews for large data (full bodies may be written to disk separately if needed).
+
+
+--------------------------------------------------------------------------------
+4) CAPSULE + SYSTEMS (THE “ORG” SPINE)
+--------------------------------------------------------------------------------
+Capsule contains:
+- bus: AsyncChannel (fiber-friendly queue + subscribers)
+- homeostat: budgets/alerts (minimal for MVP)
+- roles: five named systems
+  - Operations: runs tools, dispatches to child tool-capsules
+  - Coordination: schedules messages; grants floor per session; turn end
+  - Intelligence: orchestrates LLM driver; streams deltas; emits tool_calls
+  - Governance: policy gates (sandboxing, confirmation, budgets)
+  - Identity: invariants, escalation to owner/user
+- children: Hash of name → child capsule (often tool capsules)
+
+Dispatch order (typical): Operations → Intelligence → Identity
+(Operations consumes :tool_call; Intelligence consumes :user/:tool_result; Identity handles policy updates/broadcasts.)
+
+
+--------------------------------------------------------------------------------
+5) ASYNCHRONY & PARALLELISM
+--------------------------------------------------------------------------------
+- The bus is fiber-based (`async` gem). Capsule.run loops on bus.pop and lets Coordination drain/schedule messages.
+- Operations executes each tool_call concurrently via an Executor:
+  - :fiber (default) for IO-aware code
+  - :thread for brief CPU spikes or blocking C libs
+  - (:ractor/:subprocess) later for isolation or heavy CPU
+- Use Async::Semaphore to cap per-tool concurrency if needed.
+- Coordination.wait_for_turn_end(session_id) enables CLI ports to block until the assistant final is emitted for the turn.
+
+
+--------------------------------------------------------------------------------
+6) TOOLS AS CAPSULES
+--------------------------------------------------------------------------------
+Implement a tool by subclassing VSM::ToolCapsule and including ActsAsTool:
+
+class MyTool < VSM::ToolCapsule
+  tool_name "search_repo"
+  tool_description "Search codebase by regex"
+  tool_schema({
+    type: "object",
+    properties: { pattern: { type: "string" }, path: { type: "string" } },
+    required: ["pattern"]
+  })
+
+  def execution_mode = :thread  # optional; defaults to :fiber
+  def run(args)
+    # return a String or small JSON-compatible object
+  end
+end
+
+Notes:
+- The JSON Schema should be compact and valid for OpenAI/Anthropic/Gemini.
+- Governance is injected into tool capsules (if they expose #governance=), allowing helpers like safe_path().
+- Keep results small. For big outputs, summarize or write artifacts to files and return a reference.
+
+
+--------------------------------------------------------------------------------
+7) INTELLIGENCE & PROVIDER DRIVERS
+--------------------------------------------------------------------------------
+- Intelligence subclasses handle per-session conversation history and call a driver’s run!(conversation:, tools:, policy:) which yields three events:
+  - [:assistant_delta, String]  — stream partial text
+  - [:assistant_final, String]  — final text for the turn (may be empty if only tool calls)
+  - [:tool_calls, Array<Hash>]  — each { id:, name:, arguments: Hash }
+- Conversation messages passed into drivers are hashes like:
+  { role: "system"|"user"|"assistant"|"tool", content: String, tool_call_id?: String }
+
+Providers:
+- OpenAI::DriverAsync — SSE streaming; tools in choices[].delta.tool_calls; pass tools via `[{type:"function", function:{name, description, parameters}}]`.
+- Anthropic::DriverAsync — SSE streaming; `tool_use` content blocks with `input_json_delta` fragments; pass tools via `[{name, description, input_schema}]`; tool_result fed back as a user content block `{type:"tool_result", tool_use_id, content}`.
+- Gemini::DriverAsync — non-streaming MVP; declare tools via `function_declarations`; receive `functionCall`; reply next turn with `functionResponse`.
+
+Driver selection:
+- VSM::Intelligence::DriverFamily.of(@driver) → :openai | :anthropic | :gemini.
+- Build provider-specific tool arrays from VSM::Tool::Descriptor:
+  - to_openai_tool, to_anthropic_tool, to_gemini_tool.
+
+Important rules for LLMs modifying Intelligence:
+- Do not parse tool calls from free-form text. Always use structured tool-calling outputs from drivers.
+- Maintain conversation faithfully; append assistant/tool messages exactly as providers expect.
+- Always emit :assistant_delta before :assistant when streaming text.
+
+
+--------------------------------------------------------------------------------
+8) GOVERNANCE & IDENTITY
+--------------------------------------------------------------------------------
+- Governance.enforce(message) wraps routing. Add sandboxing, diff previews, confirmations, budgets, and timeouts here.
+- Emit :confirm_request when needed; the Port must collect a :confirm_response.
+- Identity holds invariants (e.g., “stay in workspace”), escalates algedonic alerts (homeostat.alarm?).
+
+LLM policy changes should emit a :policy message that Identity can broadcast to children if necessary.
+
+
+--------------------------------------------------------------------------------
+9) PORTS (INTERFACES)
+--------------------------------------------------------------------------------
+- Base: VSM::Port with #ingress(event) and #render_out(message).
+- ChatTTY port: reads stdin lines, emits :user with meta.session_id; renders :assistant_delta (stream) and :assistant (final), handles :confirm_request → :confirm_response.
+- Other ports: CommandTTY (one-shot task), HTTP, WebSocket, MCP client/server ports (planned), TUI.
+
+Guidance for LLMs:
+- Keep ports thin. No policy or LLM logic in ports.
+- Always pass session_id; grant floor in Coordination for deterministic streaming.
+
+
+--------------------------------------------------------------------------------
+10) OBSERVABILITY (MONITORING + LENS)
+--------------------------------------------------------------------------------
+- Monitoring subscribes to the bus and appends JSONL to .vsm.log.jsonl.
+- Lens is a tiny Rack app serving an SSE `/events` feed with a simple HTML viewer.
+- Enable in apps:
+  VSM::Lens.attach!(capsule, host: "127.0.0.1", port: 9292, token: ENV["VSM_LENS_TOKEN"])
+
+Lens best practices:
+- Include meta.session_id, path, corr_id, and meta.tool on events.
+- Keep payload small to avoid UI lag; the server already truncates strings.
+- For multi-process swarms, add a RemotePublisher that forwards events to one hub (future).
+
+
+--------------------------------------------------------------------------------
+11) DSL FOR ASSEMBLY
+--------------------------------------------------------------------------------
+Example organism:
+
+org = VSM::DSL.define(:airb) do
+  identity     klass: MyIdentity,    args: { identity: "airb", invariants: ["stay in workspace"] }
+  governance   klass: MyGovernance,  args: { workspace_root: Dir.pwd }
+  coordination klass: VSM::Coordination
+  intelligence klass: MyIntelligence, args: { driver: my_driver }
+  monitoring   klass: VSM::Monitoring
+
+  operations do
+    capsule :list_files, klass: Tools::ListFiles
+    capsule :read_file,  klass: Tools::ReadFile
+    capsule :edit_file,  klass: Tools::EditFile
+    # capsule :editor,    klass: Capsules::Editor  (full sub-agent capsule)
+  end
+end
+
+Start:
+VSM::Runtime.start(org, ports: [ChatTTY.new(capsule: org)])
+
+
+--------------------------------------------------------------------------------
+12) PROVIDER CONFIG (ENV VARS)
+--------------------------------------------------------------------------------
+- OPENAI_API_KEY, AIRB_MODEL (e.g., "gpt-4o-mini")
+- ANTHROPIC_API_KEY, AIRB_MODEL (e.g., "claude-3-5-sonnet-latest")
+- GEMINI_API_KEY, AIRB_MODEL (e.g., "gemini-2.0-flash-001")
+- AIRB_PROVIDER = openai | anthropic | gemini
+- VSM_LENS=1, VSM_LENS_PORT=9292, VSM_LENS_TOKEN=...
+
+
+--------------------------------------------------------------------------------
+13) CODING STANDARDS (FOR LLM CHANGES)
+--------------------------------------------------------------------------------
+- Idiomatic Ruby, small objects, SRP. Keep classes under ~150 LOC when possible.
+- Favor explicit dependencies via initializer args.
+- Avoid global mutable state. If you add caches, use per-capsule fields.
+- Don’t block fibers: for I/O use async-http; for CPU spikes switch to thread executor.
+- Tests for every new adapter/driver parser with fixtures; route tests for message sequencing.
+- Prefer incremental diffs (unified patches) with file paths and clear commit titles:
+  - Title: <module>: <short imperative> (e.g., "intelligence/openai: handle empty delta lines")
+  - Body: “Why”, “What changed”, “Tests”.
+
+
+--------------------------------------------------------------------------------
+14) TESTING (MINIMUM BASELINE)
+--------------------------------------------------------------------------------
+- Routing smoke test: :tool_call → :tool_result → :assistant
+- Provider parsing tests:
+  - OpenAI SSE fixture → emits deltas + final + tool_calls
+  - Anthropic SSE fixture with tool_use/input_json_delta → emits tool_calls + final
+  - Gemini functionCall fixture → emits tool_calls or final text
+- Governance tests: sandbox rejects path traversal; confirm flow produces :confirm_request
+- Concurrency tests: parallel tool calls produce paired results (different corr_id), no interleaved confusion in Coordination
+
+
+--------------------------------------------------------------------------------
+15) EXTENDING THE FRAMEWORK
+--------------------------------------------------------------------------------
+A) Add a new tool capsule
+- Create class <YourTool> < VSM::ToolCapsule
+- Declare name/description/schema; implement #run; optional #execution_mode
+- Register in operations DSL
+
+B) Add a sub-agent capsule
+- Provide its own Operations/Coordination/Intelligence/Governance/Identity (recursive)
+- Optionally include ActsAsTool and expose itself as a parent tool (its #run orchestrates internal steps and returns a string)
+
+C) Add a provider
+- Place a new driver_* under lib/vsm/intelligence/<provider>/
+- Yield the same three events (:assistant_delta, :assistant_final, :tool_calls)
+- Add a descriptor conversion if provider needs a special tool shape
+- Update DriverFamily.of to map the class → symbol
+
+D) Add MCP support (future plan)
+- Implement Ports::MCP::Server to expose tools via MCP spec
+- Implement Ports::MCP::Client to consume external MCP tools and wrap as tool capsules
+
+
+--------------------------------------------------------------------------------
+16) SAFETY & SECURITY
+--------------------------------------------------------------------------------
+- Never write outside the workspace. Use Governance.safe_path() in tools.
+- Confirm risky writes with :confirm_request → :confirm_response.
+- Add timeouts on tool calls and LLM calls (budget via Homeostat or Governance).
+- Use semaphores to cap concurrency per tool to avoid resource exhaustion.
+- Do not log secrets. Mask API keys and sensitive args before emitting events.
+
+
+--------------------------------------------------------------------------------
+17) KNOWN LIMITATIONS / TODOs
+--------------------------------------------------------------------------------
+- Ractor/Subprocess executors are stubs in some scaffolds; implement when needed.
+- Gemini streaming is not wired yet (MVP uses non-streaming). Add Live/stream endpoints later.
+- Homeostat budgets are placeholders; implement counters and algedonic signals as needed.
+- Lens has minimal UI; extract richer vsm-lens gem when features grow.
+
+
+--------------------------------------------------------------------------------
+18) HOW TO ASK THIS LLM FOR CHANGES
+--------------------------------------------------------------------------------
+- Provide concrete goals and constraints (e.g., “Add a `search_repo` tool that scans *.rb files for a pattern; thread executor; unit tests; and show it in Lens with meta.tool”).
+- Ask for *unified diffs* with exact file paths under lib/ and spec/. Keep patches minimal and focused.
+- Require updates to README snippets if public API changes.
+- Have it add/extend tests and run them locally (`bundle exec rspec`).
+- If the change affects the message kinds or meta fields, ensure Lens/TUI still render sensibly.
+
+
+--------------------------------------------------------------------------------
+19) LICENSE & ATTRIBUTION
+--------------------------------------------------------------------------------
+- MIT by default (edit gemspec if different). Respect third-party licenses for gems you add.
+- Keep provider SDKs optional; current drivers use `async-http` + stdlib only.
+
+
+End of llms.txt.
