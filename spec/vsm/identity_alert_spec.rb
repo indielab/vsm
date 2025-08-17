@@ -12,7 +12,7 @@ RSpec.describe VSM::Identity do
         identity: spy,
         governance: VSM::Governance.new,
         coordination: VSM::Coordination.new,
-        intelligence: VSM::Intelligence.new,
+        intelligence: VSM::Intelligence.new(driver: FakeDriver.new),
         operations: VSM::Operations.new
       },
       children: {}

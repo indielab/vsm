@@ -128,3 +128,11 @@ class SpyIdentity < VSM::Identity
   end
 end
 
+# A fake driver for testing that doesn't make real API calls
+class FakeDriver
+  def run!(conversation:, tools:, policy: {}, &emit)
+    # Simple test driver that just emits a basic response
+    yield(:assistant_final, "test response") if block_given?
+  end
+end
+

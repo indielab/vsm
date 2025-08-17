@@ -10,7 +10,7 @@ RSpec.describe "Capsule and DSL" do
       b.identity(klass: VSM::Identity, args: { identity: "demo", invariants: [] })
       b.governance(klass: FakeGovernance, args: {})
       b.coordination(klass: VSM::Coordination)
-      b.intelligence(klass: VSM::Intelligence)
+      b.intelligence(klass: VSM::Intelligence, args: { driver: FakeDriver.new })
       b.operations do
         capsule :echo, klass: FakeEchoTool
       end

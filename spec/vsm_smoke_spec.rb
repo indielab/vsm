@@ -14,7 +14,7 @@ RSpec.describe VSM do
       identity     klass: VSM::Identity,    args: { identity: "t", invariants: [] }
       governance   klass: VSM::Governance
       coordination klass: VSM::Coordination
-      intelligence klass: VSM::Intelligence
+      intelligence klass: VSM::Intelligence, args: { driver: FakeDriver.new }
       operations do
         capsule :t, klass: T
       end
