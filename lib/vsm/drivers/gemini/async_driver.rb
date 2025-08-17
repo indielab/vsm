@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 require "async"
-require "async/http/internet"
+require "net/http"
+require "uri"
 require "json"
 require "securerandom"
 
@@ -8,49 +9,86 @@ module VSM
   module Drivers
     module Gemini
       class AsyncDriver
-        def initialize(api_key:, model:, base_url: "https://generativelanguage.googleapis.com/v1beta")
-          @api_key, @model, @base = api_key, model, base_url
+        def initialize(api_key:, model:, base_url: "https://generativelanguage.googleapis.com/v1beta", streaming: true)
+          @api_key, @model, @base, @streaming = api_key, model, base_url, streaming
         end
 
         def run!(conversation:, tools:, policy: {}, &emit)
-          internet = Async::HTTP::Internet.new
-          begin
-              uri = "#{@base}/models/#{@model}:generateContent?key=#{@api_key}"
-              headers = { "content-type" => "application/json" }
-
-              contents = to_gemini_contents(conversation, policy[:system_prompt])
-              fndecls = normalize_gemini_tools(tools)
-
-              body = JSON.dump({ contents: contents, tools: { function_declarations: fndecls } })
-              res  = internet.post(uri, headers, body)
-
-              if res.status != 200
-                warn "gemini HTTP #{res.status}: #{res.read}"
-                emit.call(:assistant_final, "")
-                return :done
+          contents = to_gemini_contents(conversation)
+          fndecls  = normalize_gemini_tools(tools)
+          if @streaming
+            uri = URI.parse("#{@base}/models/#{@model}:streamGenerateContent?alt=sse&key=#{@api_key}")
+            headers = { "content-type" => "application/json", "accept" => "text/event-stream" }
+            body = JSON.dump({ contents: contents, system_instruction: (policy[:system_prompt] && { parts: [{ text: policy[:system_prompt] }], role: "user" }), tools: [{ functionDeclarations: fndecls }] })
+            http = Net::HTTP.new(uri.host, uri.port)
+            http.use_ssl = (uri.scheme == "https")
+            req = Net::HTTP::Post.new(uri.request_uri)
+            headers.each { |k,v| req[k] = v }
+            req.body = body
+            http.request(req) do |res|
+              if res.code.to_i != 200
+                err = +""; res.read_body { |c| err << c }
+                emit.call(:assistant_final, "Gemini HTTP #{res.code}: #{err.to_s.byteslice(0, 400)}")
+                next
               end
-
-              data  = JSON.parse(res.read) rescue {}
+              buffer = +""; text = +""; calls = []
+              res.read_body do |chunk|
+                buffer << chunk
+                while (i = buffer.index("\n"))
+                  line = buffer.slice!(0..i)
+                  line.chomp!
+                  next unless line.start_with?("data:")
+                  data = line.sub("data:","").strip
+                  next if data.empty? || data == "[DONE]"
+                  obj = JSON.parse(data) rescue nil
+                  next unless obj
+                  parts = (obj.dig("candidates",0,"content","parts") || [])
+                  parts.each do |p|
+                    if (t = p["text"]) && !t.empty?
+                      text << t
+                      emit.call(:assistant_delta, t)
+                    end
+                    if (fc = p["functionCall"]) && fc["name"]
+                      calls << { id: SecureRandom.uuid, name: fc["name"], arguments: (fc["args"] || {}) }
+                    end
+                  end
+                end
+              end
+              if calls.any?
+                emit.call(:tool_calls, calls)
+              else
+                emit.call(:assistant_final, text)
+              end
+            end
+          else
+            uri = URI.parse("#{@base}/models/#{@model}:generateContent?key=#{@api_key}")
+            headers = { "content-type" => "application/json" }
+            body = JSON.dump({ contents: contents, system_instruction: (policy[:system_prompt] && { parts: [{ text: policy[:system_prompt] }], role: "user" }), tools: [{ functionDeclarations: fndecls }] })
+            http = Net::HTTP.new(uri.host, uri.port)
+            http.use_ssl = (uri.scheme == "https")
+            req = Net::HTTP::Post.new(uri.request_uri)
+            headers.each { |k,v| req[k] = v }
+            req.body = body
+            res = http.request(req)
+            if res.code.to_i != 200
+              emit.call(:assistant_final, "Gemini HTTP #{res.code}")
+            else
+              data = JSON.parse(res.body) rescue {}
               parts = (data.dig("candidates",0,"content","parts") || [])
-
-              calls = parts.filter_map { |p|
-                fc = p["functionCall"]
-                fc && { id: SecureRandom.uuid, name: fc["name"], arguments: fc["args"] || {} }
-              }
-
+              calls = parts.filter_map { |p| fc = p["functionCall"]; fc && { id: SecureRandom.uuid, name: fc["name"], arguments: fc["args"] || {} } }
               if calls.any?
                 emit.call(:tool_calls, calls)
               else
                 text = parts.filter_map { |p| p["text"] }.join
                 emit.call(:assistant_final, text.to_s)
               end
-          ensure
-            internet.close
+            end
           end
           :done
         end
 
         private
+        # (no IPv6/IPv4 forcing; rely on default Internet)
         def normalize_gemini_tools(tools)
           Array(tools).map { |t| normalize_gemini_tool(t) }
         end
@@ -76,9 +114,8 @@ module VSM
         end
 
 
-        def to_gemini_contents(neutral, system_prompt)
+        def to_gemini_contents(neutral)
           items = []
-          items << { role: "user", parts: [{ text: system_prompt }] } if system_prompt
           neutral.each do |m|
             case m[:role]
             when "user"
@@ -95,6 +132,15 @@ module VSM
             end
           end
           items
+        end
+
+        def extract_sse_line!(buffer)
+          if (i = buffer.index("\n"))
+            line = buffer.slice!(0..i)
+            line.chomp!
+            return line
+          end
+          nil
         end
       end
     end

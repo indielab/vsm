@@ -58,6 +58,7 @@ class StreamTTY < VSM::Port
       $stdout.flush
     when :assistant
       puts "" # end the line
+      puts msg.payload.to_s unless msg.payload.to_s.empty?
       puts "(turn #{msg.meta&.dig(:turn_id)})"
     when :tool_result
       puts "\nTool> #{msg.payload}"
