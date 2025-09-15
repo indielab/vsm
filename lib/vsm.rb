@@ -35,6 +35,14 @@ require_relative "vsm/drivers/family"
 
 require_relative "vsm/lens"
 
+# Optional/built-in ports and MCP integration
+require_relative "vsm/ports/chat_tty"
+require_relative "vsm/ports/mcp/server_stdio"
+require_relative "vsm/mcp/jsonrpc"
+require_relative "vsm/mcp/client"
+require_relative "vsm/mcp/remote_tool_capsule"
+require_relative "vsm/dsl_mcp"
+
 module Vsm
   class Error < StandardError; end
   # Your code goes here...

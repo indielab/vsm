@@ -1,20 +1,13 @@
 # frozen_string_literal: true
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 require "vsm"
+require "vsm/dsl_mcp"
 require "vsm/ports/chat_tty"
 require "securerandom"
 
-class EchoTool < VSM::ToolCapsule
-  tool_name "echo"
-  tool_description "Echoes a message"
-  tool_schema({ type: "object", properties: { text: { type: "string" } }, required: ["text"] })
+# This example mounts a remote MCP server (we use example 05 as the server)
+# and exposes its tools locally via dynamic reflection. Type: echo: hello
 
-  def run(args)
-    "you said: #{args["text"]}"
-  end
-end
-
-# Minimal “intelligence” that triggers a tool when user types "echo: ..."
 class DemoIntelligence < VSM::Intelligence
   def handle(message, bus:, **)
     case message.kind
@@ -26,7 +19,6 @@ class DemoIntelligence < VSM::Intelligence
       end
       true
     when :tool_result
-      # Complete the turn after tool execution
       bus.emit VSM::Message.new(kind: :assistant, payload: "(done)", meta: message.meta)
       true
     else
@@ -35,17 +27,19 @@ class DemoIntelligence < VSM::Intelligence
   end
 end
 
-cap = VSM::DSL.define(:demo) do
-  identity    klass: VSM::Identity,    args: { identity: "demo", invariants: [] }
-  governance  klass: VSM::Governance
+server_cmd = "ruby #{File.expand_path("05_mcp_server_and_chattty.rb", __dir__)}"
+
+cap = VSM::DSL.define(:mcp_mount_demo) do
+  identity     klass: VSM::Identity,     args: { identity: "mcp_mount_demo", invariants: [] }
+  governance   klass: VSM::Governance
   coordination klass: VSM::Coordination
   intelligence klass: DemoIntelligence
-  monitoring  klass: VSM::Monitoring
+  monitoring   klass: VSM::Monitoring
   operations do
-    capsule :echo, klass: EchoTool
+    # Reflect the remote server's tools; include only :echo and expose as local name "echo"
+    mcp_server :demo_server, cmd: server_cmd, include: %w[echo]
   end
 end
 
-# Use the built-in, customizable ChatTTY port
-banner = ->(io) { io.puts "\e[96mEcho demo\e[0m — type 'echo: hello' (Ctrl-C to exit)" }
+banner = ->(io) { io.puts "\e[96mMCP mount demo\e[0m — type 'echo: hi' (Ctrl-C to exit)" }
 VSM::Runtime.start(cap, ports: [VSM::Ports::ChatTTY.new(capsule: cap, banner: banner)])

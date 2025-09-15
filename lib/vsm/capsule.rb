@@ -11,6 +11,8 @@ module VSM
       ctx = { operations_children: children.transform_keys(&:to_s) }
       @bus = AsyncChannel.new(context: ctx)
       @homeostat = Homeostat.new
+      # Inject bus into children that accept it, to enable richer observability
+      @children.each_value { |c| c.bus = @bus if c.respond_to?(:bus=) }
       wire_observers!
     end
 

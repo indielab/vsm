@@ -12,7 +12,7 @@ module VSM
   #   - system_prompt(session_id) -> String
   #   - offer_tools?(session_id, descriptor) -> true/false (filter tools)
   class Intelligence
-    def initialize(driver:, system_prompt: nil)
+    def initialize(driver: nil, system_prompt: nil)
       @driver         = driver
       @system_prompt  = system_prompt
       @sessions       = Hash.new { |h,k| h[k] = new_session_state }
@@ -21,6 +21,9 @@ module VSM
     def observe(bus); end
 
     def handle(message, bus:, **)
+      # If no driver is configured, the base implementation is inert.
+      # Subclasses can override #handle to implement non-LLM behavior.
+      return false if @driver.nil?
       case message.kind
       when :user
         sid = message.meta&.dig(:session_id)
@@ -165,4 +168,3 @@ module VSM
     end
   end
 end
-

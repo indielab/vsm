@@ -350,6 +350,91 @@ Start everything:
 VSM::Runtime.start(capsule, ports: [MyPort.new(capsule:)])
 ```
 
+### Built-in Ports
+
+- `VSM::Ports::ChatTTY` — A generic, customizable chat terminal UI. Safe to run alongside MCP stdio; prefers `IO.console` so it won’t pollute stdout.
+- `VSM::Ports::MCP::ServerStdio` — Exposes your capsule as an MCP server on stdio implementing `tools/list` and `tools/call`.
+
+Enable them:
+
+```ruby
+require "vsm/ports/chat_tty"
+require "vsm/ports/mcp/server_stdio"
+
+ports = [
+  VSM::Ports::MCP::ServerStdio.new(capsule: capsule),  # machine IO (stdio)
+  VSM::Ports::ChatTTY.new(capsule: capsule)            # human IO (terminal)
+]
+VSM::Runtime.start(capsule, ports: ports)
+```
+
+### MCP Client (reflect and wrap tools)
+
+Reflect tools from an external MCP server and expose them as local tools using the DSL. This uses a tiny stdio JSON‑RPC client under the hood.
+
+```ruby
+require "vsm/dsl_mcp"
+
+cap = VSM::DSL.define(:mcp_client) do
+  identity     klass: VSM::Identity,    args: { identity: "mcp_client", invariants: [] }
+  governance   klass: VSM::Governance
+  coordination klass: VSM::Coordination
+  intelligence klass: VSM::Intelligence # or your own
+  monitoring   klass: VSM::Monitoring
+  operations do
+    # Prefix helps avoid name collisions
+    mcp_server :smith, cmd: "smith-server --stdio", prefix: "smith_", include: %w[search read]
+  end
+end
+```
+
+See `examples/06_mcp_mount_reflection.rb` and `examples/07_connect_claude_mcp.rb`.
+
+Note: Many MCP servers speak LSP-style `Content-Length` framing on stdio. The
+current minimal transport uses NDJSON for simplicity. If a server hangs or
+doesn't respond, switch the transport to LSP framing in `lib/vsm/mcp/jsonrpc.rb`.
+
+### Customizing ChatTTY
+
+You can customize ChatTTY via options or by subclassing to override only the banner and rendering methods, while keeping the input loop.
+
+```ruby
+class FancyTTY < VSM::Ports::ChatTTY
+  def banner(io)
+    io.puts "\e[95m\n ███  CUSTOM CHAT  ███\n\e[0m"
+  end
+
+  def render_out(m)
+    super # or implement your own formatting
+  end
+end
+
+VSM::Runtime.start(capsule, ports: [FancyTTY.new(capsule: capsule, prompt: "Me> ")])
+```
+
+See `examples/08_custom_chattty.rb`.
+
+### LLM-driven MCP tools
+
+Use an LLM driver (e.g., OpenAI) to automatically call tools reflected from an MCP server:
+
+```ruby
+driver = VSM::Drivers::OpenAI::AsyncDriver.new(api_key: ENV.fetch("OPENAI_API_KEY"), model: ENV["AIRB_MODEL"] || "gpt-4o-mini")
+cap = VSM::DSL.define(:mcp_with_llm) do
+  identity     klass: VSM::Identity,     args: { identity: "mcp_with_llm", invariants: [] }
+  governance   klass: VSM::Governance
+  coordination klass: VSM::Coordination
+  intelligence klass: VSM::Intelligence, args: { driver: driver, system_prompt: "Use tools when helpful." }
+  monitoring   klass: VSM::Monitoring
+  operations do
+    mcp_server :server, cmd: ["claude","mcp","serve"]  # reflect tools
+  end
+end
+VSM::Runtime.start(cap, ports: [VSM::Ports::ChatTTY.new(capsule: cap)])
+```
+
+See `examples/09_mcp_with_llm_calls.rb`.
+
 ## Observability
 
 VSM ships a tiny Monitoring role that writes an append‑only JSONL ledger:
@@ -363,6 +448,12 @@ VSM ships a tiny Monitoring role that writes an append‑only JSONL ledger:
 ```
 
 Use it to power a TUI/HTTP "Lens" later. Because everything flows over the bus, you get consistent events across nested capsules and sub‑agents.
+
+### MCP and ChatTTY Coexistence
+
+- MCP stdio port only reads stdin and writes strict JSON to stdout.
+- ChatTTY prefers `IO.console` or falls back to stderr and disables input if no TTY.
+- You can run both in the same process: machine protocol on stdio, human UI on the terminal.
 
 ## Writing an Intelligence
 
