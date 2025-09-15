@@ -57,8 +57,9 @@ class StreamTTY < VSM::Port
       print msg.payload
       $stdout.flush
     when :assistant
-      puts "" # end the line
-      puts msg.payload.to_s unless msg.payload.to_s.empty?
+      puts "" # end the line after streaming
+      # The :assistant event carries the full final text again; avoid re-printing it
+      # because we've already streamed the deltas above. Just show the turn marker.
       puts "(turn #{msg.meta&.dig(:turn_id)})"
     when :tool_result
       puts "\nTool> #{msg.payload}"
@@ -69,5 +70,4 @@ class StreamTTY < VSM::Port
 end
 
 VSM::Runtime.start(cap, ports: [StreamTTY.new(capsule: cap)])
-
 

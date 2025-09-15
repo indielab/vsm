@@ -37,9 +37,7 @@ end
 
 driver = VSM::Drivers::Anthropic::AsyncDriver.new(
   api_key: ENV.fetch("ANTHROPIC_API_KEY"),
-  model: MODEL,
-  streaming: true,
-  transport: :nethttp
+  model: MODEL
 )
 
 system_prompt = <<~PROMPT
@@ -92,5 +90,4 @@ class ToolTTY < VSM::Port
 end
 
 VSM::Runtime.start(cap, ports: [ToolTTY.new(capsule: cap)])
-
 

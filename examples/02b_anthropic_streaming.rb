@@ -10,9 +10,7 @@ MODEL = ENV["AIRB_MODEL"] || "claude-sonnet-4-0"
 
 driver = VSM::Drivers::Anthropic::AsyncDriver.new(
   api_key: ENV.fetch("ANTHROPIC_API_KEY"),
-  model: MODEL,
-  streaming: true,
-  transport: :nethttp
+  model: MODEL
 )
 
 system_prompt = "You are a concise assistant. Answer briefly."
@@ -57,5 +55,4 @@ class StreamTTY < VSM::Port
 end
 
 VSM::Runtime.start(cap, ports: [StreamTTY.new(capsule: cap)])
-
 

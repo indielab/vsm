@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 require "json"
-require "mutex_m"
+require "monitor"
 
 module VSM
   module MCP
@@ -8,13 +8,13 @@ module VSM
       # Minimal NDJSON (one JSON per line) JSON-RPC transport over IO.
       # Note: MCP servers often speak LSP framing; we can add that later.
       class Stdio
-        include Mutex_m
+        include MonitorMixin
 
         def initialize(r:, w:)
           @r = r
           @w = w
           @seq = 0
-          super()
+          mon_initialize
         end
 
         def request(method, params = {})
