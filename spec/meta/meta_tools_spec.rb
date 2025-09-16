@@ -45,6 +45,27 @@ RSpec.describe "VSM meta read-only tools" do
     expect(result[:code][:snippet]).to include("def run")
   end
 
+  it "explains a role and returns code snippets" do
+    explain_role = host.children.fetch("meta_explain_role")
+    result = explain_role.run({ "role" => "coordination" })
+    expect(result[:role][:name]).to eq("coordination")
+    expect(result[:role][:class]).to include("VSM::Coordination")
+    expect(result[:code]).to be_an(Array)
+    expect(result[:code]).not_to be_empty
+    expect(result[:code].first[:snippet]).to include("def ")
+    expect(result[:vsm_summary].to_s.length).to be > 0
+  end
+
+  it "explains operations with child tools context" do
+    explain_role = host.children.fetch("meta_explain_role")
+    result = explain_role.run({ "role" => "operations" })
+    expect(result[:role][:name]).to eq("operations")
+    children = result.dig(:role_specific, :children)
+    expect(children).to be_an(Array)
+    names = children.map { _1[:tool_name] }
+    expect(names).to include("meta_spec_tool")
+  end
+
   it "summarize self includes stats" do
     summarize = host.children.fetch("meta_summarize_self")
     result = summarize.run({})

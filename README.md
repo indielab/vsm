@@ -225,6 +225,37 @@ Your `MyLLMIntelligence` would:
 - **Observability**: append‑only JSONL ledger you can feed into a UI later
 - **POODR/SOLID**: small objects, high cohesion, low coupling
 
+## Meta Tools
+
+VSM includes a set of read‑only meta tools you can attach to any capsule to inspect its structure and code:
+
+- `meta_summarize_self` — Summarize the current capsule including roles and tools
+- `meta_list_tools` — List all tools available in the organism (descriptors and paths)
+- `meta_explain_tool` — Show code and context for a specific tool
+- `meta_explain_role` — Explain a role implementation for a capsule, with source snippets
+
+Attach them when building your capsule:
+
+```ruby
+capsule = VSM::DSL.define(:my_agent) do
+  identity     klass: VSM::Identity,     args: { identity: "my_agent" }
+  governance   klass: VSM::Governance
+  coordination klass: VSM::Coordination
+  intelligence klass: VSM::Intelligence
+  monitoring   klass: VSM::Monitoring
+  operations do
+    meta_tools  # registers the four meta tools above on this capsule
+  end
+end
+```
+
+Example calls:
+
+- `meta_summarize_self {}` → high‑level snapshot and counts
+- `meta_list_tools {}` → array of tools with descriptors
+- `meta_explain_tool { "tool": "some_tool" }` → code snippet + descriptor
+- `meta_explain_role { "role": "coordination" }` → role class, constructor args, source locations, and code blocks
+
 ## Core Concepts
 
 ### Capsule

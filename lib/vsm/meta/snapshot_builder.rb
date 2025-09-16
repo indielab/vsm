@@ -8,12 +8,12 @@ module VSM
   module Meta
     class SnapshotBuilder
       ROLE_METHOD_HINTS = {
-        identity: %i[handle initialize],
-        governance: %i[enforce initialize],
-        coordination: %i[stage drain initialize],
-        operations: %i[handle initialize],
-        intelligence: %i[handle initialize system_prompt],
-        monitoring: %i[observe initialize]
+        identity: %i[handle alert observe initialize],
+        governance: %i[enforce observe initialize],
+        coordination: %i[stage drain order grant_floor! wait_for_turn_end initialize],
+        operations: %i[handle observe initialize],
+        intelligence: %i[handle system_prompt offer_tools? initialize],
+        monitoring: %i[observe handle initialize]
       }.freeze
 
       def initialize(root:)

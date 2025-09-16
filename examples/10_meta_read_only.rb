@@ -32,6 +32,7 @@ SYSTEM_PROMPT = <<~PROMPT
     - meta_summarize_self: overview of the current capsule and its roles
     - meta_list_tools: list available tools with schemas
     - meta_explain_tool: show implementation details for a named tool
+    - meta_explain_role: show capsule-specific details and code for a VSM role
   When the user asks about capabilities, available tools, or how something
   works, call the appropriate meta_* tool first, then respond with a clear,
   human-friendly summary that cites relevant tool names. Be concise but

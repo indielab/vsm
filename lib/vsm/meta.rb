@@ -10,7 +10,8 @@ module VSM
     DEFAULT_TOOL_MAP = {
       "meta_summarize_self" => Tools::SummarizeSelf,
       "meta_list_tools" => Tools::ListTools,
-      "meta_explain_tool" => Tools::ExplainTool
+      "meta_explain_tool" => Tools::ExplainTool,
+      "meta_explain_role" => Tools::ExplainRole
     }.freeze
 
     module_function
