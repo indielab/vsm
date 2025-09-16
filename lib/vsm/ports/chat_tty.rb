@@ -2,6 +2,7 @@
 require "securerandom"
 require "io/console"
 require "async"
+ 
 
 module VSM
   module Ports
@@ -16,7 +17,7 @@ module VSM
         turn:   "\e[2m(turn %s)\e[0m"
       }.freeze
 
-      def initialize(capsule:, input: nil, output: nil, banner: nil, prompt: nil, theme: {})
+      def initialize(capsule:, input: nil, output: nil, banner: nil, prompt: nil, theme: {}, show_tool_results: false)
         super(capsule: capsule)
         # Prefer STDIN/STDOUT if they are TTY. If not, try /dev/tty.
         # Avoid IO.console to minimize kqueue/select issues under async.
@@ -35,6 +36,7 @@ module VSM
         @prompt = prompt || DEFAULT_THEME[:you]
         @theme  = DEFAULT_THEME.merge(theme)
         @streaming = false
+        @show_tool_results = show_tool_results
       end
 
       def should_render?(message)
@@ -84,7 +86,7 @@ module VSM
           @out.puts
           @out.puts "#{@theme[:tool]}#{message.payload[:tool]}"
         when :tool_result
-          # Show tool result payload for manual or non-streaming usage.
+          return unless @show_tool_results
           out = message.payload.to_s
           unless out.empty?
             @out.puts
@@ -103,6 +105,8 @@ module VSM
           io.puts "vsm chat — Ctrl-C to exit"
         end
       end
+
+      private
     end
   end
 end

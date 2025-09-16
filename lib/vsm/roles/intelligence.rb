@@ -12,6 +12,8 @@ module VSM
   #   - system_prompt(session_id) -> String
   #   - offer_tools?(session_id, descriptor) -> true/false (filter tools)
   class Intelligence
+    attr_reader :driver
+
     def initialize(driver: nil, system_prompt: nil)
       @driver         = driver
       @system_prompt  = system_prompt

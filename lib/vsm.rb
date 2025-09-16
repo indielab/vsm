@@ -20,6 +20,8 @@ require_relative "vsm/tool/descriptor"
 require_relative "vsm/tool/acts_as_tool"
 require_relative "vsm/tool/capsule"
 
+require_relative "vsm/meta"
+
 require_relative "vsm/executors/fiber_executor"
 require_relative "vsm/executors/thread_executor"
 

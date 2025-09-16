@@ -31,6 +31,14 @@ module VSM
     end
 
     def pop = @queue.dequeue
-    def subscribe(&blk) = @subs << blk
+
+    def subscribe(&blk)
+      @subs << blk
+      blk
+    end
+
+    def unsubscribe(subscriber)
+      @subs.delete(subscriber)
+    end
   end
 end
