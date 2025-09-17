@@ -1,0 +1,44 @@
+# frozen_string_literal: true
+
+require "securerandom"
+
+require_relative "tools/read_file"
+
+module <%= module_name %>
+  module Organism
+    def self.build
+      # Provider selection via env (default injected at generation time)
+      provider = (ENV["<%= env_prefix %>_PROVIDER"] || "<%= provider %>").downcase
+      driver =
+        case provider
+        when "anthropic"
+          VSM::Drivers::Anthropic::AsyncDriver.new(
+            api_key: ENV.fetch("ANTHROPIC_API_KEY"),
+            model:   ENV["<%= env_prefix %>_MODEL"] || "<%= default_model %>"
+          )
+        when "gemini"
+          VSM::Drivers::Gemini::AsyncDriver.new(
+            api_key: ENV.fetch("GEMINI_API_KEY"),
+            model:   ENV["<%= env_prefix %>_MODEL"] || "<%= default_model %>"
+          )
+        else
+          VSM::Drivers::OpenAI::AsyncDriver.new(
+            api_key: ENV.fetch("OPENAI_API_KEY"),
+            model:   ENV["<%= env_prefix %>_MODEL"] || "<%= default_model %>"
+          )
+        end
+
+      VSM::DSL.define(:<%= lib_name %>) do
+        identity     klass: VSM::Identity,     args: { identity: "<%= lib_name %>", invariants: [] }
+        governance   klass: VSM::Governance
+        coordination klass: VSM::Coordination
+        intelligence klass: VSM::Intelligence, args: { driver: driver, system_prompt: "You are a helpful assistant. Use tools when helpful." }
+        monitoring   klass: VSM::Monitoring
+
+        operations do
+          capsule :read_file, klass: <%= module_name %>::Tools::ReadFile
+        end
+      end
+    end
+  end
+end

@@ -1,0 +1,12 @@
+# frozen_string_literal: true
+
+module <%= module_name %>
+  module Ports
+    class ChatTTY < VSM::Ports::ChatTTY
+      def banner(io)
+        io.puts "\e[96m<%= lib_name %>\e[0m — Ctrl-C to exit"
+      end
+    end
+  end
+end
+

@@ -1,0 +1,24 @@
+# frozen_string_literal: true
+
+require_relative "lib/<%= lib_name %>/version"
+
+Gem::Specification.new do |spec|
+  spec.name        = "<%= lib_name %>"
+  spec.version     = <%= module_name %>::VERSION
+  spec.authors     = ["Your Name"]
+  spec.email       = ["you@example.com"]
+
+  spec.summary     = "VSM app scaffold"
+  spec.description = "A minimal VSM-based agent app with ChatTTY and sample tools."
+  spec.license     = "MIT"
+
+  spec.required_ruby_version = ">= 3.2"
+
+  spec.files       = Dir.chdir(File.expand_path(__dir__)) do
+    Dir["{bin,exe,lib}/**/*", "README.md", "LICENSE.txt", "Rakefile", "Gemfile"].select { |f| File.file?(f) }
+  end
+  spec.bindir      = "exe"
+  spec.executables = ["<%= exe_name %>"]
+  spec.require_paths = ["lib"]
+end
+

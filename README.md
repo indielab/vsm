@@ -165,6 +165,28 @@ ruby quickstart.rb
 # Tool> you said: hello
 ```
 
+## Project Generator (CLI)
+
+Scaffold a new VSM app with a ChatTTY interface:
+
+```bash
+gem install vsm   # or build/install locally
+vsm new my_agent
+cd my_agent
+bundle install
+bundle exec exe/my-agent
+```
+
+Options:
+- `--with-llm openai|anthropic|gemini` — choose LLM provider (default: openai)
+- `--model <name>` — default model
+- `--git` — initialize git and commit
+- `--bundle` — run `bundle install`
+- `--path <dir>` — target directory (default: `./<name>`)
+- `--force` — overwrite an existing non-empty directory
+
+Generated layout mirrors the `airb` example: an `Organism.build` to assemble the capsule, a default `ChatTTY` port, and a sample `echo` tool ready to extend.
+
 ## Building a Real Agent
 
 For a real agent with LLM integration:

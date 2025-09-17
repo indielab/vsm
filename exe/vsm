@@ -1,0 +1,17 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Keep CLI independent of any project's Bundler context so we resolve this
+# gem's dependencies rather than a host app's Gemfile.
+ENV.delete('BUNDLE_GEMFILE')
+ENV.delete('BUNDLE_BIN_PATH')
+if (rubyopt = ENV['RUBYOPT'])
+  ENV['RUBYOPT'] = rubyopt.split.reject { |x| x.include?('bundler/setup') }.join(' ')
+end
+ENV.delete('RUBYGEMS_GEMDEPS')
+
+require 'vsm'
+require 'vsm/cli'
+
+VSM::CLI.start(ARGV)
+

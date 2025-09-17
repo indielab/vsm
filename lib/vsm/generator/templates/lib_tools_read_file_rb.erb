@@ -1,0 +1,32 @@
+# frozen_string_literal: true
+
+module <%= module_name %>
+  module Tools
+    class ReadFile < VSM::ToolCapsule
+      tool_name "read_file"
+      tool_description "Read the contents of a UTF-8 text file at a relative path within the current workspace."
+      tool_schema({
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Relative path to a text file (UTF-8)." }
+        },
+        required: ["path"]
+      })
+
+      def run(args)
+        rel = args["path"].to_s
+        raise "path required" if rel.strip.empty?
+        root = Dir.pwd
+        full = File.expand_path(File.join(root, rel))
+        # Prevent escaping outside workspace root
+        unless full.start_with?(root + File::SEPARATOR) || full == root
+          raise "outside workspace"
+        end
+        File.read(full, mode: "r:UTF-8")
+      rescue Errno::ENOENT
+        raise "file not found: #{rel}"
+      end
+    end
+  end
+end
+

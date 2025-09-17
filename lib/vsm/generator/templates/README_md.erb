@@ -1,0 +1,40 @@
+# <%= module_name %>
+
+A minimal VSM app scaffold. Starts a capsule with a ChatTTY interface, an LLM-backed intelligence (OpenAI by default), and a `read_file` tool.
+
+## Quickstart
+
+```bash
+bundle install
+OPENAI_API_KEY=... bundle exec exe/<%= exe_name %>
+```
+
+Ask the assistant questions, or request reading a file, e.g.:
+
+```
+read README.md
+```
+
+You can customize the banner and prompt in `lib/<%= lib_name %>/ports/chat_tty.rb` and add tools under `lib/<%= lib_name %>/tools`.
+
+## LLM Configuration
+
+This scaffold includes LLM wiring. Configure provider via env vars (or choose at generation time):
+
+- `<%= env_prefix %>_PROVIDER` — `openai` (default), `anthropic`, or `gemini`
+- `<%= env_prefix %>_MODEL` — defaults to `<%= default_model %>` if not set
+- API key env var depends on provider:
+  - `OPENAI_API_KEY`
+  - `ANTHROPIC_API_KEY`
+  - `GEMINI_API_KEY`
+
+Run:
+
+```bash
+<%= env_prefix %>_PROVIDER=<%= provider %> <%= env_prefix %>_MODEL=<%= default_model %> \
+OPENAI_API_KEY=... bundle exec exe/<%= exe_name %>
+```
+
+## Lens (optional)
+
+Set `VSM_LENS=1` to launch the Lens UI and print its URL. You can change `VSM_LENS_PORT` and provide `VSM_LENS_TOKEN`.

@@ -1,0 +1,34 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Keep CLI independent of any project's Bundler context.
+ENV.delete('BUNDLE_GEMFILE')
+ENV.delete('BUNDLE_BIN_PATH')
+if (rubyopt = ENV['RUBYOPT'])
+  ENV['RUBYOPT'] = rubyopt.split.reject { |x| x.include?('bundler/setup') }.join(' ')
+end
+ENV.delete('RUBYGEMS_GEMDEPS')
+
+$stdout.sync = true
+$stderr.sync = true
+
+$LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
+require "vsm"
+require "<%= lib_name %>"
+
+capsule = <%= module_name %>::Organism.build
+
+hub = nil
+if ENV["VSM_LENS"] == "1"
+  hub = VSM::Lens.attach!(
+    capsule,
+    host: "127.0.0.1",
+    port: (ENV["VSM_LENS_PORT"] || 9292).to_i,
+    token: ENV["VSM_LENS_TOKEN"]
+  )
+  puts "Lens: http://127.0.0.1:#{ENV['VSM_LENS_PORT'] || 9292}"
+end
+
+port = <%= module_name %>::Ports::ChatTTY.new(capsule: capsule)
+VSM::Runtime.start(capsule, ports: [port])
+
